@@ -59,9 +59,17 @@ def run_pipeline(
     min_ads: int = 0,
     skip_count: bool = False,
     skip_metadata: bool = False,
-    skip_download: bool = False,
     skip_analyze: bool = False,
 ) -> None:
+    """
+    Run the 3-stage pipeline per niche:
+      Stage 1 — count_agent:    keyword counts → keyword_snapshots
+      Stage 2 — metadata_agent: individual ad metadata → ads table
+      Stage 3 — analyze_agent:  Claude analysis (download temp, analyze, delete)
+
+    Note: there is no separate download stage. analyze_agent downloads media
+    inline, runs analysis, then deletes the file. Only text is stored.
+    """
     init_db()
 
     start = datetime.now()
@@ -87,7 +95,7 @@ def run_pipeline(
         # Stage 2: Metadata
         # ------------------------------------------------------------------
         if not skip_metadata:
-            logger.info("[Stage 2] Metadata agent — individual ad nodes")
+            logger.info("[Stage 2] Metadata agent — individual ad metadata")
             from agents.metadata_agent import run_metadata_agent
             ads = run_metadata_agent(
                 niche=niche,
@@ -100,26 +108,15 @@ def run_pipeline(
             logger.info("[Stage 2] Skipped")
 
         # ------------------------------------------------------------------
-        # Stage 3: Download
-        # ------------------------------------------------------------------
-        if not skip_download:
-            logger.info("[Stage 3] Download agent — media files")
-            from agents.download_agent import run_download_agent
-            dl_stats = run_download_agent(limit=count * 2, niche=niche)
-            logger.info(f"[Stage 3] {dl_stats}")
-        else:
-            logger.info("[Stage 3] Skipped")
-
-        # ------------------------------------------------------------------
-        # Stage 4: Analyze
+        # Stage 3: Analyze (download temp → analyze → delete media)
         # ------------------------------------------------------------------
         if not skip_analyze:
-            logger.info("[Stage 4] Analyze agent — Claude analysis")
+            logger.info("[Stage 3] Analyze agent — Claude copy + vision + Whisper")
             from agents.analyze_agent import run_analyze_agent
             an_stats = run_analyze_agent(limit=count, niche=niche)
-            logger.info(f"[Stage 4] {an_stats}")
+            logger.info(f"[Stage 3] {an_stats}")
         else:
-            logger.info("[Stage 4] Skipped")
+            logger.info("[Stage 3] Skipped")
 
     elapsed = (datetime.now() - start).seconds
     stats = get_stats()
@@ -137,11 +134,10 @@ def main():
                         help="Skip keywords with fewer than N ads in last snapshot")
 
     # Stage flags
-    parser.add_argument("--count-only", action="store_true", help="Run Stage 1 only")
-    parser.add_argument("--skip-count", action="store_true", help="Skip Stage 1")
+    parser.add_argument("--count-only",    action="store_true", help="Stage 1 only")
+    parser.add_argument("--skip-count",    action="store_true", help="Skip Stage 1")
     parser.add_argument("--skip-metadata", action="store_true", help="Skip Stage 2")
-    parser.add_argument("--skip-download", action="store_true", help="Skip Stage 3")
-    parser.add_argument("--skip-analyze", action="store_true", help="Skip Stage 4")
+    parser.add_argument("--skip-analyze",  action="store_true", help="Skip Stage 3")
 
     args = parser.parse_args()
 
@@ -157,7 +153,6 @@ def main():
         min_ads=args.min_ads,
         skip_count=args.skip_count,
         skip_metadata=args.skip_metadata or args.count_only,
-        skip_download=args.skip_download or args.count_only,
         skip_analyze=args.skip_analyze or args.count_only,
     )
 

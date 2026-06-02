@@ -1,51 +1,36 @@
-# Stage 3 + 4 — Download media and analyze with Claude
+# Stage 3 — Claude analysis (download temp → analyze → delete media)
 #
 # Runs once daily at 2PM BRT (17:00 UTC), after Stage 2 finishes.
-# Stage 3: downloads video/image files for ads collected in Stage 2
-# Stage 4: runs Claude analysis (copy, vision, Whisper transcription)
+#
+# No separate download stage: analyze_agent downloads media inline,
+# runs Claude/Whisper analysis, then deletes the file immediately.
+# Only text (transcript, analysis, hook, swipe_score) is stored in Supabase.
 #
 # Required secrets:
 #   DATABASE_URL      — Supabase PostgreSQL connection string
-#   ANTHROPIC_API_KEY — Claude API for copy + image analysis
+#   ANTHROPIC_API_KEY — Claude API key
 
-name: Stage 3+4 — Download & Analyze
+name: Stage 3 — Analyze Ads
 
 on:
   schedule:
-    - cron: '0 17 * * *'   # 2PM BRT — runs after Stage 2 finishes
+    - cron: '0 17 * * *'   # 2PM BRT
   workflow_dispatch:
     inputs:
       limit:
         description: 'Max ads to analyze (default 50)'
         required: false
         default: '50'
+      min_days:
+        description: 'Min days running (default 7)'
+        required: false
+        default: '7'
 
 jobs:
-  download:
-    name: Stage 3 — Download media
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run Stage 3 — download media
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          python -m agents.download_agent \
-            --limit ${{ github.event.inputs.limit || '200' }}
-
   analyze:
-    name: Stage 4 — Claude analysis
-    needs: download
+    name: Analyze ads with Claude
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -55,12 +40,17 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          apt-get install -y ffmpeg || true
 
-      - name: Run Stage 4 — analyze with Claude
+      - name: Run Stage 3 — analyze
         env:
           DATABASE_URL:       ${{ secrets.DATABASE_URL }}
           ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
+          USE_LOCAL_WHISPER:  "false"   # use OpenAI Whisper API in CI (no GPU)
+          OPENAI_API_KEY:     ${{ secrets.OPENAI_API_KEY }}
         run: |
           python -m agents.analyze_agent \
-            --limit ${{ github.event.inputs.limit || '50' }}
+            --limit ${{ github.event.inputs.limit || '50' }} \
+            --min-days ${{ github.event.inputs.min_days || '7' }}
