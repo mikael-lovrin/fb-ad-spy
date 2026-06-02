@@ -1,25 +1,30 @@
 # Stage 1 — Keyword count scraper
 #
 # Runs twice daily at 5AM and 5PM BRT (Brazil UTC-3):
-#   5AM  BRT = 08:00 UTC  →  results ready by 6AM BRT
-#   5PM  BRT = 20:00 UTC  →  results ready by 6PM BRT
+#   5AM  BRT = 08:00 UTC
+#   5PM  BRT = 20:00 UTC
 #
-# IP rotation: each niche runs as a separate matrix job = separate GitHub runner = different IP.
-# max-parallel: 1 + 5-min cooldown between niches prevents FB soft throttle.
+# IP rotation: each niche = separate matrix job = separate runner = different IP.
+# max-parallel: 1 + 5-min cooldown prevents FB soft throttle.
 #
-# Required secret: DATABASE_URL (Supabase PostgreSQL connection string)
+# Required secret: DATABASE_URL (Supabase pooler connection string — NOT the direct URL)
+# Use the Transaction pooler URL from Supabase → Settings → Database → Connection pooling
+# Format: postgresql://postgres.[ref]:[pw]@aws-0-[region].pooler.supabase.com:6543/postgres
 
 name: Stage 1 — Count Keywords
 
 on:
   schedule:
-    - cron: '0 8 * * *'    # 5AM BRT (morning run)
-    - cron: '0 20 * * *'   # 5PM BRT (evening run)
+    - cron: '0 8 * * *'    # 5AM BRT
+    - cron: '0 20 * * *'   # 5PM BRT
   workflow_dispatch:
     inputs:
       niche:
         description: 'Single niche (leave empty for all)'
         required: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # suppress Node.js 20 deprecation warnings
 
 jobs:
   count:
