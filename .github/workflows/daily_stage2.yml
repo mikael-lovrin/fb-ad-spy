@@ -1,29 +1,25 @@
-# Stage 2 — Individual ad metadata scraper (runs daily, after Stage 1)
+# Stage 2 — Individual ad metadata scraper
 #
-# Only processes keywords that had >= 1000 active ads in the last Stage 1 run,
-# keeping runtime and Supabase write volume manageable.
+# Runs once daily at 10AM BRT (13:00 UTC), after Stage 1 morning run completes.
+# Extracts individual ad metadata (publisher, copy, dates, collation_count, media URLs)
+# for keywords with >= 5000 active ads in the latest Stage 1 snapshot.
 #
-# Runs 2 hours after Stage 1 (4:00 AM UTC) to ensure Stage 1 has finished
-# and the IP has had time to cool down.
-#
-# Secrets needed:
-#   DATABASE_URL    → Supabase PostgreSQL connection string
-#   ANTHROPIC_API_KEY → for copy analysis (Stage 4, optional here)
+# Required secret: DATABASE_URL
 
 name: Stage 2 — Ad Metadata
 
 on:
   schedule:
-    - cron: '0 4 * * *'
+    - cron: '0 13 * * *'   # 10AM BRT — runs after morning Stage 1 finishes
   workflow_dispatch:
     inputs:
       niche:
         description: 'Single niche (leave empty for all)'
         required: false
       min_ads:
-        description: 'Min active ads to process (default 1000)'
+        description: 'Min active ads threshold (default 5000)'
         required: false
-        default: '1000'
+        default: '5000'
 
 jobs:
   metadata:
@@ -41,13 +37,15 @@ jobs:
           - memory
           - back_pain
           - vision
+          - prostate
+          - sleep
+          - blood_pressure
+          - neuropathy
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python 3.12
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
@@ -57,7 +55,7 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium --with-deps
 
-      - name: Cooldown between niches
+      - name: Cooldown between niches (10 min)
         if: matrix.niche != 'weight_loss'
         run: sleep 600
 
@@ -68,4 +66,4 @@ jobs:
           python -m agents.metadata_agent \
             --niche ${{ matrix.niche }} \
             --count 100 \
-            --min-ads ${{ github.event.inputs.min_ads || '1000' }}
+            --min-ads ${{ github.event.inputs.min_ads || '5000' }}
