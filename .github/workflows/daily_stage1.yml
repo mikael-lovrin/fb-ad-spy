@@ -1,0 +1,78 @@
+# Stage 1 — Keyword count scraper (runs daily)
+#
+# IP rotation strategy:
+#   Each niche is a separate matrix job → separate GitHub runner → different IP.
+#   Jobs run sequentially (max-parallel: 1) with a 5-min gap between niches,
+#   giving FB's soft throttle time to reset between IP transitions.
+#
+# Secrets needed (Settings → Secrets → Actions):
+#   DATABASE_URL  →  postgresql://postgres:[pw]@db.[ref].supabase.co:5432/postgres
+#
+# Schedule: 2:00 AM UTC daily (quiet hours, lower FB bot-detection pressure)
+
+name: Stage 1 — Count Keywords
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:           # allow manual trigger from GitHub UI
+    inputs:
+      niche:
+        description: 'Single niche to run (leave empty for all)'
+        required: false
+
+jobs:
+  count:
+    name: count / ${{ matrix.niche }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      max-parallel: 1          # sequential = different IP per niche + no burst
+      fail-fast: false         # one niche failing doesn't cancel the rest
+      matrix:
+        niche:
+          - weight_loss
+          - diabetes
+          - ed
+          - memory
+          - back_pain
+          - vision
+          - prostate
+          - sleep
+          - blood_pressure
+          - neuropathy
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: playwright install chromium --with-deps
+
+      # 5-minute cooldown between niches — gives FB throttle time to reset
+      # and ensures jobs don't overlap on GitHub's shared IP pools.
+      - name: Cooldown between niches
+        if: matrix.niche != 'weight_loss'
+        run: sleep 300
+
+      - name: Run Stage 1 — ${{ matrix.niche }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python -m agents.count_agent \
+            --niche ${{ matrix.niche }} \
+            --country US \
+            --delay 30
+
+      - name: Summary
+        if: always()
+        run: echo "Completed niche ${{ matrix.niche }} on runner $RUNNER_NAME"

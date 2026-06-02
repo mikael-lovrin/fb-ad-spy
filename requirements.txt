@@ -1,0 +1,24 @@
+# Web scraping
+playwright>=1.60.0
+playwright-stealth>=2.0.0
+requests>=2.31.0
+
+# Config
+python-dotenv>=1.0.0
+
+# AI / analysis
+anthropic>=0.40.0
+openai>=1.0.0            # only needed if USE_LOCAL_WHISPER=false
+
+# Video transcription (local, free) — uncomment to install
+# faster-whisper>=1.0.0
+
+# Database — PostgreSQL (Supabase cloud) or SQLite (local dev)
+psycopg2-binary>=2.9.9   # PostgreSQL adapter; SQLite is built into Python
+
+# Data / dashboard
+pandas>=2.0.0
+streamlit>=1.35.0
+
+# Video processing — requires ffmpeg installed on the system
+ffmpeg-python>=0.2.0

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python.exe main.py --test-token)",
+      "Bash(.venv/Scripts/python.exe -c \"import playwright; print\\('playwright ok'\\)\")",
+      "Bash(.venv/Scripts/pip install:*)",
+      "Bash(.venv/Scripts/python.exe -m playwright install chromium)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:blog.apify.com)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:scraperly.com)",
+      "WebFetch(domain:apify.com)",
+      "WebFetch(domain:scrapecreators.com)",
+      "Bash(.venv/Scripts/python.exe test_playwright.py)"
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+# Local development / testing with Docker
+# Usage:
+#   docker-compose run --rm spy python -m agents.count_agent --niche diabetes
+#   docker-compose run --rm spy python -m pipeline --niche weight_loss --count-only
+
+services:
+  spy:
+    build: .
+    env_file: .env           # loads DATABASE_URL, ANTHROPIC_API_KEY, etc.
+    volumes:
+      - ./data:/app/data     # persist SQLite DB and downloaded media locally
+      - ./logs:/app/logs
+    # Override the default CMD for interactive use:
+    # docker-compose run --rm spy agents.count_agent --niche diabetes
