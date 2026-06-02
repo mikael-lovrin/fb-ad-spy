@@ -4,30 +4,24 @@ Agent 2 — Metadata Agent
 ========================
 Fetches individual ad metadata by scraping the FB Ad Library page HTML.
 
-The ad data is embedded server-side in a large <script type="application/json">
-tag as a nested __bbox JSON blob. This is MORE RELIABLE than intercepting
-GraphQL responses (which get rate-limited) because it's in the initial page load.
+The ad data is server-side rendered into the page as a large
+<script type="application/json"> tag (~391KB). This is more reliable than
+intercepting GraphQL calls (which get rate-limited).
 
-Structure confirmed from page HTML:
-  search_results_connection.count   — real total ad count
-  search_results_connection.edges[].node.collated_results[]
-    .ad_archive_id                  — library ID (unique key)
-    .collation_count                — active creatives (scale signal)
-    .is_active
-    .page_id
-    .snapshot.page_name             — publisher
-    .snapshot.body.text             — ad copy
-    .snapshot.cta_text              — call to action
-    .snapshot.videos[].video_hd_url — video URL
-    .snapshot.images[].original_image_url — image URL
+Confirmed structure:
+  search_results_connection.count          — real total
+  edges[].node.collated_results[]
+    .ad_archive_id, .collation_count, .page_id
+    .snapshot.page_name, .snapshot.body.text (copy)
+    .snapshot.cta_text, .snapshot.videos[], .snapshot.images[]
 
-Data saved per ad: publisher, copy, start_date, collation_count,
-                   platforms, library ID, media URLs.
+Page version detection:
+  Full page  ~2.2MB — has the 391KB script tag with ad data  → extracts ads
+  Throttled  ~1.2MB — simplified page, no ad data script      → retries once
 
 Usage:
-    python -m agents.metadata_agent --niche diabetes --count 50
-    python -m agents.metadata_agent --keyword "blood sugar trick" --count 30
-    python -m agents.metadata_agent --niche weight_loss --min-ads 1000 --count 100
+    python -m agents.metadata_agent --niche diabetes --min-ads 5000
+    python -m agents.metadata_agent --keyword "blood sugar trick" --count 50
 """
 
 import argparse
@@ -46,51 +40,17 @@ from storage.database import (
 
 logger = logging.getLogger(__name__)
 
+# A full (non-throttled) FB Ad Library page is ~2.2MB.
+# If content is below this threshold the throttled version was served.
+_FULL_PAGE_MIN_BYTES = 1_800_000
 
-async def _scrape_keyword_metadata(
-    browser,
-    keyword: str,
-    country: str,
-    count: int,
-    scroll_pages: int = 3,
-) -> tuple[int, list[dict]]:
+
+async def _load_page_with_retry(page, url: str, max_attempts: int = 2) -> str:
     """
-    Load FB Ad Library for one keyword and extract all ads from page HTML.
-
-    Uses a fresh browser context per call to avoid session-based rate limiting.
-    Scrolls up to scroll_pages times to load more ads beyond the initial batch.
-
-    Returns: (total_count, ads_list)
+    Load the FB Ad Library URL and return the page HTML.
+    If the throttled (small) page is served, waits 60s and retries once.
     """
-    context = await browser.new_context(
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        locale="en-US",
-        timezone_id="America/New_York",
-        viewport={"width": 1280, "height": 900},
-    )
-    page = await context.new_page()
-
-    # Apply playwright-stealth to reduce bot detection fingerprinting
-    try:
-        from playwright_stealth import stealth_async
-        await stealth_async(page)
-    except ImportError:
-        pass
-
-    all_ads: list[dict] = []
-    seen_ids: set[str] = set()
-    total_count = 0
-
-    url = build_search_url(keyword, country, media_type="all", language="en")
-
-    try:
-        # domcontentloaded is more reliable than networkidle for FB Ad Library —
-        # networkidle can fire before the SSR JSON blob is fully rendered.
-        # We use an explicit 8-second wait after dom ready instead.
+    for attempt in range(1, max_attempts + 1):
         await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
 
         for sel in [
@@ -104,11 +64,65 @@ async def _scrape_keyword_metadata(
             except Exception:
                 pass
 
-        # Allow deferred FB script tags (SSR JSON blobs) to fully inject
+        # Wait for deferred SSR script tags to inject
         await page.wait_for_timeout(8_000)
 
-        # Extract from initial page load
         html = await page.content()
+        size = len(html.encode("utf-8", errors="replace"))
+
+        if size >= _FULL_PAGE_MIN_BYTES:
+            logger.debug(f"  Full page served ({size/1e6:.1f}MB)")
+            return html
+
+        logger.warning(
+            f"  Throttled page ({size/1e6:.1f}MB) on attempt {attempt}/{max_attempts}"
+        )
+        if attempt < max_attempts:
+            logger.info("  Waiting 60s for throttle to clear...")
+            await asyncio.sleep(60)
+            await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+
+    return html  # return whatever we have after all attempts
+
+
+async def _scrape_keyword_metadata(
+    browser,
+    keyword: str,
+    country: str,
+    count: int,
+    scroll_pages: int = 4,
+) -> tuple[int, list[dict]]:
+    """
+    Load FB Ad Library for one keyword and extract all ads from the page HTML.
+
+    Uses a fresh browser context per keyword to avoid accumulated session state.
+    Returns (total_available_count, ads_list).
+    """
+    context = await browser.new_context(
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        locale="en-US",
+        timezone_id="America/New_York",
+        viewport={"width": 1280, "height": 900},
+    )
+    page = await context.new_page()
+
+    try:
+        from playwright_stealth import stealth_async
+        await stealth_async(page)
+    except ImportError:
+        pass
+
+    all_ads:  list[dict] = []
+    seen_ids: set[str]   = set()
+    total_count = 0
+    url = build_search_url(keyword, country, media_type="all", language="en")
+
+    try:
+        html = await _load_page_with_retry(page, url)
         total, ads = extract_ads_from_html(html, keyword)
         total_count = total
 
@@ -119,11 +133,11 @@ async def _scrape_keyword_metadata(
                 all_ads.append(ad)
 
         logger.info(
-            f"  '{keyword}': initial load = {len(all_ads)} ads "
+            f"  '{keyword}': {len(all_ads)} ads loaded "
             f"(total available: {total_count:,})"
         )
 
-        # Scroll to load more if needed
+        # Scroll to load more result pages
         for scroll_n in range(scroll_pages):
             if len(all_ads) >= count:
                 break
@@ -139,10 +153,10 @@ async def _scrape_keyword_metadata(
                     seen_ids.add(aid)
                     all_ads.append(ad)
 
-            new_count = len(all_ads) - prev
-            logger.info(f"    Scroll {scroll_n + 1}: +{new_count} ads (total: {len(all_ads)})")
-            if new_count == 0:
-                break  # no new ads loaded, stop scrolling
+            new = len(all_ads) - prev
+            logger.info(f"    Scroll {scroll_n + 1}: +{new} ads (total: {len(all_ads)})")
+            if new == 0:
+                break
 
     except Exception as e:
         logger.error(f"  Error scraping '{keyword}': {e}")
@@ -159,14 +173,14 @@ async def run_metadata_agent_async(
     country: str = "US",
     count: int = 50,
     min_total_ads: int = 0,
-    inter_keyword_delay: float = 5.0,
+    inter_keyword_delay: float = 10.0,
 ) -> list[dict]:
     """
-    Collect individual ad metadata for all keywords.
+    Collect individual ad metadata for all keywords in a niche.
 
     Args:
-        min_total_ads:        Skip keywords with fewer than N ads in last snapshot.
-        inter_keyword_delay:  Seconds between keywords to avoid rate limiting.
+        min_total_ads:        Only process keywords with >= N ads in last Stage 1 snapshot.
+        inter_keyword_delay:  Seconds between keywords (allows throttle to reset).
     """
     if keywords:
         kw_list = keywords
@@ -182,7 +196,9 @@ async def run_metadata_agent_async(
             for s in get_latest_snapshots(niche, country)
         }
         kw_list = [k for k in kw_list if snapshots.get(k, 0) >= min_total_ads]
-        logger.info(f"  After min-ads filter (>={min_total_ads}): {len(kw_list)} keywords")
+        logger.info(
+            f"  After min-ads filter (>={min_total_ads:,}): {len(kw_list)} keywords"
+        )
 
     logger.info(f"[metadata_agent] {len(kw_list)} keywords | country={country}")
     all_ads: list[dict] = []
@@ -204,9 +220,9 @@ async def run_metadata_agent_async(
 
     if all_ads:
         stats = bulk_upsert(all_ads)
-        logger.info(f"[metadata_agent] Saved to DB: {stats}")
+        logger.info(f"[metadata_agent] Saved: {stats}")
 
-        # Update snapshot video/image counts from actual ad types
+        # Update snapshot video/image counts from actual ad_type values
         seen_kw = {a.get("keyword_found", "") for a in all_ads if a.get("keyword_found")}
         for kw in seen_kw:
             try:
@@ -238,10 +254,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Agent 2: Scrape individual ad metadata")
     parser.add_argument("--niche", type=str)
-    parser.add_argument("--keyword", type=str)
-    parser.add_argument("--count", type=int, default=50)
+    parser.add_argument("--keyword", type=str, help="Single keyword override")
+    parser.add_argument("--count", type=int, default=50, help="Ads per keyword")
     parser.add_argument("--country", type=str, default="US")
-    parser.add_argument("--min-ads", type=int, default=0)
+    parser.add_argument(
+        "--min-ads", type=int, default=0,
+        help="Only process keywords with >= N ads in last Stage 1 snapshot",
+    )
     args = parser.parse_args()
 
     init_db()
@@ -254,14 +273,10 @@ if __name__ == "__main__":
         count=args.count,
         min_total_ads=args.min_ads,
     )
-    print(f"\nMetadata agent: {len(ads)} ads saved.")
 
-    # Print sample of what was collected
+    print(f"\nMetadata agent: {len(ads)} ads saved.")
     for ad in ads[:5]:
-        print(f"\n  ID:       {ad.get('ad_archive_id')}")
-        print(f"  Page:     {ad.get('page_name')}")
+        print(f"\n  [{ad.get('ad_type', '?')}] {ad.get('page_name')}")
         print(f"  Scale:    {ad.get('collation_count')} creatives")
         print(f"  Days:     {ad.get('days_running')}")
-        print(f"  Type:     {ad.get('ad_type') or 'unknown'}")
-        body = (ad.get("ad_body") or "")[:120].replace("\n", " ")
-        print(f"  Copy:     {body}...")
+        print(f"  Copy:     {str(ad.get('ad_body', ''))[:100]}...")
