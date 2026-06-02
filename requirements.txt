@@ -19,6 +19,7 @@ psycopg2-binary>=2.9.9   # PostgreSQL adapter; SQLite is built into Python
 # Data / dashboard
 pandas>=2.0.0
 streamlit>=1.35.0
+plotly>=5.20.0
 
 # Video processing — requires ffmpeg installed on the system
 ffmpeg-python>=0.2.0
