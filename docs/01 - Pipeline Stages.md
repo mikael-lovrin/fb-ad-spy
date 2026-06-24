@@ -1,6 +1,8 @@
 # Pipeline Stages
 
-The pipeline has 4 independent agents. Each can run standalone or as part of the full pipeline.
+The pipeline has 3 scraping/analysis agents (run daily via GitHub Actions) plus a 4th,
+human-triggered benchmark agent that synthesizes their output into a readable report.
+Each can run standalone or as part of the full pipeline (`pipeline.py`).
 
 ## Stage 1 — Count Agent
 **File:** `agents/count_agent.py`
@@ -47,8 +49,8 @@ FB detects automated requests and serves a simplified page that caps at "100 res
 | `collation_count` | Active creatives from this advertiser ← scale signal |
 | `start_date` | When the ad started running |
 | `days_running` | Calculated from start_date |
-| `_video_url` | Video URL (for Stage 3) |
-| `_image_url` | Image URL (for Stage 3) |
+| `video_url` / `image_url` | FB CDN URL, valid ~24-48h — fetched and discarded by Stage 3, never stored locally |
+| `ad_format` / `card_count` | `catalog` when `snapshot.cards[]` is non-empty (DPA/carousel ad, no single fixed creative) — see [[07 - Spy Methodology (Gustavo's Process)]] |
 
 ### Scale signal — collation_count
 Gustavo's method: advertisers with 10,000+ active creatives = validated scaled offer.
@@ -66,28 +68,17 @@ Gustavo's method: advertisers with 10,000+ active creatives = validated scaled o
 
 ---
 
-## Stage 3 — Download Agent
-**File:** `agents/download_agent.py`
-**Command:** `python -m agents.download_agent --limit 200`
-
-### What it does
-- Finds ads with remote `video_url` or `image_url` in the DB
-- Downloads to `data/media/<ad_archive_id>.<ext>`
-- Updates the DB with the local file path
-- Skips if file already exists
-
----
-
-## Stage 4 — Analyze Agent
+## Stage 3 — Analyze Agent
 **File:** `agents/analyze_agent.py`
 **Command:** `python -m agents.analyze_agent --limit 50`
 
 ### What it does
-For each unanalyzed ad:
+For each unanalyzed ad (download → analyze → delete; nothing is kept on disk):
 1. **Copy analysis** (Claude): extracts industry, hook, pain points, benefits, CTA, funnel format
-2. **Video** (if `video_url` exists): ffmpeg audio extraction → Whisper transcription → Claude VSL analysis
-3. **Image** (if `image_url` exists): Claude Vision → creative analysis
-4. **Swipe score** (0-100): composite signal based on days running + impression volume + hook presence + DR niche
+2. **Video** (if `video_url` and not `ad_format == "catalog"`): download temp → ffmpeg audio extraction → Whisper transcription → Claude VSL analysis → delete
+3. **Image** (if `image_url` and not catalog): download temp → Claude Vision → delete
+4. **Catalog ads**: skipped for video/image (no single fixed creative — see [[07 - Spy Methodology (Gustavo's Process)]]), copy analysis still runs
+5. **Swipe score** (0-100): composite signal based on days running + impression volume + hook presence + DR niche
 
 ### Swipe score formula
 ```
@@ -98,3 +89,26 @@ impressions >= 100k: +20 pts
 hook present:        +15 pts
 known DR niche:      +15 pts
 ```
+
+---
+
+## Stage 4 — Benchmark Agent (human-triggered)
+**File:** `agents/benchmark_agent.py`
+**Command:** `python -m agents.benchmark_agent --niche weight_loss` or `--all`
+
+### What it does
+Synthesizes Stages 1-3 output into a per-niche markdown report — the judgment call a human
+benchmark analyst makes when reviewing spy results, automated. Three Python data passes feed
+one Claude call (not three, to avoid paying for separate LLM round-trips on plain arithmetic):
+
+1. `get_trend_summary` — % change in `active_ad_count` per keyword over the trend window,
+   excluding throttled snapshots (100/100/100)
+2. `get_new_entrants` — advertisers in a keyword's `top_pages` now but not N days ago
+3. `get_top_offers` — top ads by `collation_count` / `days_running` / `swipe_score`
+
+Report sections: Niche Pulse, Rising/Declining Keywords, New Scale-Leader Advertisers,
+Top Swipe Candidates, Recommended Action. Saved to `benchmark_reports` table, shown on the
+dashboard's "Benchmark Reports" tab.
+
+Daily cron + Slack delivery is a stated future goal, not built — this agent is designed to be
+schedulable later (call it from a workflow, post `report_md` to a webhook) without changes.

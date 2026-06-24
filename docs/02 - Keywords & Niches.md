@@ -1,21 +1,20 @@
 # Keywords & Niches
 
-## 10 active DR niches
+## 5 active DR niches
 
 | Niche | Keywords | Top mechanism |
 |-------|----------|---------------|
 | `weight_loss` | 14 | "gelatin trick", "belly fat trick" |
-| `diabetes` | 13 | "blood sugar trick", "reverse diabetes" |
 | `ed` | 13 | "salt trick", "blood flow trick" |
 | `memory` | 13 | "memory trick", "brain ritual" |
-| `back_pain` | 12 | "sciatic nerve trick", "back pain ritual" |
-| `vision` | 13 | "vision trick", "blurry vision trick" |
 | `prostate` | 12 | "prostate trick", "stop waking up at night" |
 | `sleep` | 13 | "sleep trick", "sleep ritual" |
-| `blood_pressure` | 13 | "blood pressure morning ritual" |
-| `neuropathy` | 13 | "neuropathy trick", "nerve pain trick" |
 
-**Total: 129 keywords**
+**Total: 65 keywords**
+
+Dropped 2026-06-24 during a niche-list review: `back_pain`, `neuropathy`,
+`diabetes`, `blood_pressure`, `vision`. Historical snapshot data for all five
+is still in Supabase if you want to revisit any of them later.
 
 ## Keyword position strategy (Gustavo Rafaell method)
 

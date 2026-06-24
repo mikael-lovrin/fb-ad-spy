@@ -9,6 +9,11 @@
 # Required secrets:
 #   DATABASE_URL      — Supabase PostgreSQL connection string
 #   ANTHROPIC_API_KEY — Claude API key
+#
+# Whisper transcription runs locally (faster-whisper, CPU) rather than via the
+# OpenAI API — no OPENAI_API_KEY configured. Untested at this scale on a
+# CPU-only GitHub runner; watch run duration and switch back to the API if
+# the "small" model is too slow.
 
 name: Stage 3 — Analyze Ads
 
@@ -51,8 +56,7 @@ jobs:
         env:
           DATABASE_URL:       ${{ secrets.DATABASE_URL }}
           ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
-          USE_LOCAL_WHISPER:  "false"   # use OpenAI Whisper API in CI (no GPU)
-          OPENAI_API_KEY:     ${{ secrets.OPENAI_API_KEY }}
+          USE_LOCAL_WHISPER:  "true"   # faster-whisper, CPU — no OpenAI key configured
         run: |
           python -m agents.analyze_agent \
             --limit ${{ github.event.inputs.limit || '50' }} \

@@ -17,16 +17,18 @@ it explains the manual technique (DR-signal words, mechanism words, duplication/
 signals, catalog vs. CBO ads, offer-validation thresholds) that this codebase automates.
 The original source material is in `docs/reference/`.
 
-## 3-stage pipeline
+## Pipeline
 
 | Stage | Agent | What it does |
 |-------|-------|-------------|
 | 1 | `agents/count_agent.py` | Counts active ads per keyword (total / video / image) → keyword_snapshots |
 | 2 | `agents/metadata_agent.py` | Extracts individual ad data from HTML → ads table |
 | 3 | `agents/analyze_agent.py` | Downloads media to temp → Claude copy + Vision + Whisper → deletes media, keeps only analysis text |
+| 4 | `agents/benchmark_agent.py` | Human-triggered. Synthesizes Stages 1-3 into a per-niche markdown report → benchmark_reports table, shown on the dashboard |
 
-(Originally a 4-stage design with a separate download agent — merged into Stage 3 since media is
-temporary anyway. `agents/download_agent.py` no longer exists.)
+(Stages 1-3 run daily via GitHub Actions. Originally a 4-stage design with a separate download
+agent — merged into Stage 3 since media is temporary anyway; `agents/download_agent.py` no
+longer exists. Stage 4 is new and not yet scheduled — see docs/01.)
 
 ## Key technical discoveries
 
@@ -55,13 +57,13 @@ Builder: `core/playwright_scraper.py → build_search_url()`
 ## File structure
 
 ```
-agents/          4 pipeline agents (count, metadata, download, analyze)
+agents/          4 agents (count, metadata, analyze, benchmark)
 analysis/        Claude copy, image, video analyzers
-core/            config, keywords, playwright scraper, HTML parser
-storage/         database layer (dual SQLite/PostgreSQL), media downloader
+core/            config, keywords, playwright URL builders, HTML parser
+storage/         database layer (dual SQLite/PostgreSQL)
 dashboard/       Streamlit dashboard
-docs/            Obsidian project notes
-.github/workflows/ GitHub Actions (Stage 1×2/day, Stage 2, Stage 3+4)
+docs/            Obsidian project notes + docs/reference/ source PDFs/transcripts
+.github/workflows/ GitHub Actions (Stage 1 daily, Stage 2 daily, Stage 3 daily — Stage 4 not scheduled)
 Dockerfile       Playwright + ffmpeg production image
 ```
 
@@ -69,21 +71,28 @@ Dockerfile       Playwright + ffmpeg production image
 
 ```bash
 # Stage 1 — count
-python -m agents.count_agent --niche diabetes --delay 30
+python -m agents.count_agent --niche weight_loss --delay 30
 
 # Stage 2 — metadata
-python -m agents.metadata_agent --niche diabetes --min-ads 5000
+python -m agents.metadata_agent --niche weight_loss --min-ads 5000
 
-# Full pipeline
+# Stage 4 — benchmark report (human-triggered)
+python -m agents.benchmark_agent --niche weight_loss
+python -m agents.benchmark_agent --all
+
+# Full pipeline (stages 1-3)
 python pipeline.py --niche weight_loss
 
 # Count only (no Claude API costs)
 python pipeline.py --niche weight_loss --count-only
 ```
 
-## Nichos / niches (10 total)
+## Nichos / niches (5 total)
 
-`weight_loss`, `diabetes`, `ed`, `memory`, `back_pain`, `vision`, `prostate`, `sleep`, `blood_pressure`, `neuropathy`
+`weight_loss`, `ed`, `memory`, `prostate`, `sleep`
+
+(`back_pain`, `neuropathy`, `diabetes`, `blood_pressure`, `vision` dropped 2026-06-24
+during a niche-list review.)
 
 Keywords in `core/keywords.py` — 129 total, all English, organized by DR position strategy:
 - Position 1-2: symptom anchor ("blood sugar", "belly fat")

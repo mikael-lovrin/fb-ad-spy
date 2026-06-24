@@ -35,15 +35,10 @@ jobs:
       matrix:
         niche:
           - weight_loss
-          - diabetes
           - ed
           - memory
-          - back_pain
-          - vision
           - prostate
           - sleep
-          - blood_pressure
-          - neuropathy
 
     steps:
       - uses: actions/checkout@v4

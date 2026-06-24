@@ -100,12 +100,24 @@ CREATE INDEX IF NOT EXISTS idx_collected_at ON ads(collected_at);
 CREATE INDEX IF NOT EXISTS idx_active_status ON ads(active_status);
 """
 
+_SCHEMA_REPORTS = """
+CREATE TABLE IF NOT EXISTS benchmark_reports (
+    id              {pk},
+    niche           TEXT NOT NULL,
+    generated_at    TEXT NOT NULL,
+    report_md       TEXT,
+    data_json       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_report_niche ON benchmark_reports(niche);
+CREATE INDEX IF NOT EXISTS idx_report_at    ON benchmark_reports(generated_at);
+"""
+
 
 def _build_schemas() -> list[str]:
     """Return individual CREATE TABLE/INDEX statements for the active backend."""
     pk = "BIGSERIAL PRIMARY KEY" if _USE_POSTGRES else "INTEGER PRIMARY KEY AUTOINCREMENT"
     stmts = []
-    for block in [_SCHEMA_SNAPSHOTS, _SCHEMA_ADS]:
+    for block in [_SCHEMA_SNAPSHOTS, _SCHEMA_ADS, _SCHEMA_REPORTS]:
         for stmt in block.format(pk=pk).split(";"):
             s = stmt.strip()
             if s:
@@ -427,5 +439,37 @@ def get_latest_snapshots(niche: str = None, country: str = "US") -> list[dict]:
                ) m ON s.keyword=m.keyword AND s.snapshot_at=m.latest
                ORDER BY s.active_ad_count DESC""",
             params,
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Benchmark reports (agents/benchmark_agent.py)
+# ---------------------------------------------------------------------------
+
+def save_benchmark_report(niche: str, report_md: str, data: dict) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO benchmark_reports (niche, generated_at, report_md, data_json) "
+            "VALUES (?, ?, ?, ?)",
+            (niche, datetime.now().isoformat(), report_md, json.dumps(data, ensure_ascii=False, default=str)),
+        )
+
+
+def get_latest_benchmark_report(niche: str) -> dict | None:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM benchmark_reports WHERE niche=? ORDER BY generated_at DESC LIMIT 1",
+            (niche,),
+        ).fetchall()
+        return dict(rows[0]) if rows else None
+
+
+def get_benchmark_history(niche: str, limit: int = 10) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, niche, generated_at, report_md FROM benchmark_reports "
+            "WHERE niche=? ORDER BY generated_at DESC LIMIT ?",
+            (niche, limit),
         ).fetchall()
         return [dict(r) for r in rows]

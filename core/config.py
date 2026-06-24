@@ -16,7 +16,7 @@ FB_AD_ACCOUNT_ID: str = os.getenv("FB_AD_ACCOUNT_ID", "")
 
 # -- Anthropic Claude ----------------------------------------------------------
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL: str      = "claude-sonnet-4-20250514"
+CLAUDE_MODEL: str      = "claude-sonnet-4-6"
 
 # -- OpenAI / Whisper ----------------------------------------------------------
 OPENAI_API_KEY: str    = os.getenv("OPENAI_API_KEY", "")

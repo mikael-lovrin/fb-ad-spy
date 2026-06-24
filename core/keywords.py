@@ -16,13 +16,15 @@ POSITION STRATEGY (for keyword_unordered):
   Example expansion: "blood sugar" → "blood sugar trick" → "blood sugar morning trick"
                      "belly fat" → "belly fat trick" → "belly fat trick recipe"
 
-NICHES (10 confirmed active DR niches in English US market):
-  weight_loss, diabetes, ed, memory, back_pain,
-  vision, prostate, sleep, blood_pressure, neuropathy
+NICHES (5 active DR niches in English US market):
+  weight_loss, ed, memory, prostate, sleep
+
+  Dropped 2026-06-24 during a niche-list review: back_pain, neuropathy,
+  diabetes, blood_pressure, vision. ("neuropathy trick" had also been
+  duplicated under back_pain, double-counting against neuropathy's own list.)
 
 Source references:
-  spy-tutorial.txt  — Gustavo Rafaell method (weight loss, diabetes, memory, ED, neuropathy)
-  English DR market — back_pain, vision, prostate, sleep, blood_pressure confirmed active
+  spy-tutorial.txt  — Gustavo Rafaell method (weight loss, memory, ED)
 """
 
 from itertools import product
@@ -94,31 +96,6 @@ KEYWORDS = {
     ],
 
     # -----------------------------------------------------------------------
-    # DIABETES — 2nd largest, "blood sugar" is the universal anchor
-    # "trick" as 3rd word = DR filtered, "type 2" = condition anchor
-    # -----------------------------------------------------------------------
-    "diabetes": [
-        # Broad base
-        "blood sugar",
-        "type 2 diabetes",
-        # DR-filtered mechanisms
-        "blood sugar trick",
-        "blood sugar morning ritual",
-        "reverse diabetes trick",
-        "lower blood sugar naturally",
-        # Ingredient mechanisms
-        "cinnamon blood sugar",
-        "apple cider vinegar blood sugar",
-        "berberine blood sugar",
-        # Brand/drug angle
-        "metformin alternative",
-        "ozempic",
-        # Condition anchors
-        "insulin resistance trick",
-        "a1c levels",
-    ],
-
-    # -----------------------------------------------------------------------
     # ERECTILE DYSFUNCTION — "salt trick" went massively viral in DR
     # "every man over 40" is a classic audience-hook mechanism
     # -----------------------------------------------------------------------
@@ -169,54 +146,6 @@ KEYWORDS = {
     ],
 
     # -----------------------------------------------------------------------
-    # BACK PAIN — sciatica is the highest-volume anchor
-    # "sciatic nerve" + "trick" is a proven DR combination
-    # -----------------------------------------------------------------------
-    "back_pain": [
-        # Broad base
-        "back pain",
-        "sciatic nerve",
-        # DR-filtered mechanisms
-        "back pain trick",
-        "sciatic nerve trick",
-        "sciatica ritual",
-        "relieve back pain",
-        # Specific conditions
-        "lower back pain trick",
-        "herniated disc trick",
-        "spine pain trick",
-        # Outcome-based
-        "end back pain",
-        "back pain morning ritual",
-        "neuropathy trick",
-    ],
-
-    # -----------------------------------------------------------------------
-    # VISION — "blurry vision" is the anchor, often appears in diabetes ads too
-    # "restore vision" + DR signal finds ophthalmology supplement advertisers
-    # -----------------------------------------------------------------------
-    "vision": [
-        # Broad base
-        "blurry vision",
-        "vision loss",
-        # DR-filtered mechanisms
-        "vision trick",
-        "blurry vision trick",
-        "restore vision trick",
-        "eye hack",
-        # Condition anchors
-        "macular degeneration trick",
-        "eye floaters trick",
-        "cataracts trick",
-        # Ingredient mechanisms
-        "lutein vision",
-        "bilberry eye trick",
-        # Outcome-based
-        "crystal clear vision",
-        "restore 20/20 vision",
-    ],
-
-    # -----------------------------------------------------------------------
     # PROSTATE — "enlarged prostate" is the anchor, men's health niche
     # "stop waking up at night" is a powerful audience-hook mechanism
     # -----------------------------------------------------------------------
@@ -263,56 +192,6 @@ KEYWORDS = {
         # Ingredient mechanisms
         "melatonin trick",
         "magnesium sleep trick",
-    ],
-
-    # -----------------------------------------------------------------------
-    # BLOOD PRESSURE — "morning ritual blood pressure" is a proven angle
-    # Hypertension supplements growing strongly
-    # -----------------------------------------------------------------------
-    "blood_pressure": [
-        # Broad base
-        "high blood pressure",
-        "hypertension",
-        # DR-filtered mechanisms
-        "blood pressure trick",
-        "blood pressure ritual",
-        "blood pressure morning ritual",
-        "lower blood pressure naturally",
-        # Ingredient mechanisms
-        "beet root blood pressure",
-        "garlic blood pressure",
-        "hibiscus blood pressure",
-        # Brand/drug angle
-        "lisinopril alternative",
-        "blood pressure no medication",
-        # Condition anchors
-        "systolic pressure trick",
-        "hypertension morning trick",
-    ],
-
-    # -----------------------------------------------------------------------
-    # NEUROPATHY — Gustavo explicitly mentioned, nerve pain is growing fast
-    # "neuropathy" + "trick/ritual" finds dedicated supplement advertisers
-    # -----------------------------------------------------------------------
-    "neuropathy": [
-        # Broad base
-        "neuropathy",
-        "nerve pain",
-        # DR-filtered mechanisms
-        "neuropathy trick",
-        "nerve pain trick",
-        "neuropathy ritual",
-        "peripheral neuropathy trick",
-        # Symptom hooks
-        "tingling feet trick",
-        "numbness feet trick",
-        "burning feet trick",
-        # Ingredient mechanisms
-        "alpha lipoic acid neuropathy",
-        "b12 nerve pain",
-        # Condition anchors
-        "diabetic neuropathy trick",
-        "nerve regeneration trick",
     ],
 
 }
