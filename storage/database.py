@@ -87,6 +87,8 @@ CREATE TABLE IF NOT EXISTS ads (
     collation_count     INTEGER,
     image_url           TEXT,
     video_url           TEXT,
+    ad_format           TEXT,
+    card_count          INTEGER DEFAULT 0,
     analyzed_at         TEXT,
     notes               TEXT
 );
@@ -216,6 +218,8 @@ def init_db() -> None:
         _migrate(conn, "ads", "collation_count", "INTEGER")
         _migrate(conn, "ads", "image_url",        "TEXT")
         _migrate(conn, "ads", "video_url",         "TEXT")
+        _migrate(conn, "ads", "ad_format",         "TEXT")
+        _migrate(conn, "ads", "card_count",        "INTEGER DEFAULT 0")
 
     backend = "PostgreSQL (Supabase)" if _USE_POSTGRES else f"SQLite ({DB_PATH})"
     logger.info(f"DB initialized: {backend}")
@@ -234,7 +238,7 @@ _AD_FIELDS = [
     "ad_type", "industry", "hook", "text_summary", "pain_points",
     "benefits", "cta", "format", "image_analysis", "video_transcript",
     "video_analysis", "swipe_score", "collation_count", "image_url", "video_url",
-    "analyzed_at", "notes",
+    "ad_format", "card_count", "analyzed_at", "notes",
 ]
 
 
@@ -332,9 +336,9 @@ def query_ads(
 def get_stats() -> dict:
     """Overall DB statistics."""
     with get_conn() as conn:
-        total    = conn.execute("SELECT COUNT(*) FROM ads").fetchone()[0]
-        active   = conn.execute("SELECT COUNT(*) FROM ads WHERE active_status='ACTIVE'").fetchone()[0]
-        analyzed = conn.execute("SELECT COUNT(*) FROM ads WHERE analyzed_at IS NOT NULL").fetchone()[0]
+        total    = dict(conn.execute("SELECT COUNT(*) AS n FROM ads").fetchone())["n"]
+        active   = dict(conn.execute("SELECT COUNT(*) AS n FROM ads WHERE active_status='ACTIVE'").fetchone())["n"]
+        analyzed = dict(conn.execute("SELECT COUNT(*) AS n FROM ads WHERE analyzed_at IS NOT NULL").fetchone())["n"]
         by_ind   = conn.execute(
             "SELECT industry, COUNT(*) as n FROM ads "
             "WHERE industry IS NOT NULL GROUP BY industry ORDER BY n DESC"
@@ -377,14 +381,14 @@ def save_snapshot(
 def update_snapshot_media_counts(keyword: str, country: str = "US") -> None:
     """Recompute video/image counts from actual ad_type values in the ads table."""
     with get_conn() as conn:
-        video_count = conn.execute(
-            "SELECT COUNT(*) FROM ads WHERE keyword_found=? AND ad_type='video' AND active_status='ACTIVE'",
+        video_count = dict(conn.execute(
+            "SELECT COUNT(*) AS n FROM ads WHERE keyword_found=? AND ad_type='video' AND active_status='ACTIVE'",
             (keyword,),
-        ).fetchone()[0]
-        image_count = conn.execute(
-            "SELECT COUNT(*) FROM ads WHERE keyword_found=? AND ad_type='image' AND active_status='ACTIVE'",
+        ).fetchone())["n"]
+        image_count = dict(conn.execute(
+            "SELECT COUNT(*) AS n FROM ads WHERE keyword_found=? AND ad_type='image' AND active_status='ACTIVE'",
             (keyword,),
-        ).fetchone()[0]
+        ).fetchone())["n"]
         conn.execute(
             "UPDATE keyword_snapshots SET video_count=?, image_count=? "
             "WHERE keyword=? AND country=? "

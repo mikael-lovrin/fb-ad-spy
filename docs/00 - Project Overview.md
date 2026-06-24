@@ -19,6 +19,7 @@
 - [[04 - Cloud Setup]] — GitHub Actions, Supabase, Docker
 - [[05 - How to Run]] — local and cloud commands
 - [[06 - Known Issues & Limits]] — FB throttling, anti-bot behavior
+- [[07 - Spy Methodology (Gustavo's Process)]] — the manual technique this automates, for newcomers
 
 ## Daily schedule (Brazil Time / BRT = UTC-3)
 

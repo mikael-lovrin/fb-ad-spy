@@ -204,8 +204,16 @@ def run_analyze_agent(
                 stats["errors"] += 1
 
         # 2. Video: download temp → Whisper → Claude → delete
-        video_url = ad.get("video_url") or ad.get("_video_url") or ""
-        if video_url and ad_type != "image":
+        video_url = ad.get("video_url") or ""
+        if ad.get("ad_format") == "catalog":
+            analysis["notes"] = (
+                "Catalog/DPA ad (card_count="
+                f"{ad.get('card_count')}) — Meta assembles the creative "
+                "per-viewer from a product feed, so there is no single fixed "
+                "creative to transcribe. Skipped video/image analysis; copy "
+                "analysis above still applies."
+            )
+        elif video_url and ad_type != "image":
             analysis["ad_type"] = "video"
             transcript, video_analysis = _analyze_video(video_url, ad_text)
             if transcript:
@@ -217,8 +225,8 @@ def run_analyze_agent(
                 stats["errors"] += 1
 
         # 3. Image: download temp → Claude Vision → delete
-        elif ad.get("image_url") or ad.get("_image_url"):
-            image_url = ad.get("image_url") or ad.get("_image_url")
+        elif ad.get("image_url"):
+            image_url = ad.get("image_url")
             analysis["ad_type"] = "image"
             img_analysis = _analyze_image(image_url, ad_text)
             if img_analysis and not img_analysis.startswith("Error:"):

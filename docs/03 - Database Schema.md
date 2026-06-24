@@ -58,8 +58,10 @@ One row per ad archive ID. Populated by Stage 2, enriched by Stages 3+4.
 | `active_status` | TEXT | ACTIVE / INACTIVE |
 | `collation_count` | INTEGER | **Scale signal** — active creatives from this advertiser |
 | `keyword_found` | TEXT | Which keyword found this ad |
-| `image_url` | TEXT | Local path after Stage 3 download |
-| `video_url` | TEXT | Local path after Stage 3 download |
+| `image_url` | TEXT | FB CDN URL (valid ~24-48h), used by Stage 3 to fetch + analyze then discard — not a local path, nothing is kept on disk |
+| `video_url` | TEXT | Same as `image_url`, for video ads |
+| `ad_format` | TEXT | `video` / `image` / `text` / **`catalog`** — catalog means a DPA/multi-card ad with no single fixed creative, see [[07 - Spy Methodology (Gustavo's Process)]] |
+| `card_count` | INTEGER | Number of carousel cards (`snapshot.cards[]`) — only non-zero for `ad_format = catalog` |
 | `video_transcript` | TEXT | Whisper transcription (Stage 4) |
 | `video_analysis` | TEXT | Claude VSL analysis (Stage 4) |
 | `image_analysis` | TEXT | Claude Vision analysis (Stage 4) |
@@ -87,6 +89,12 @@ SELECT page_name, keyword_found, video_transcript, video_analysis
 FROM ads
 WHERE video_transcript IS NOT NULL
 ORDER BY swipe_score DESC;
+
+-- Catalog/DPA ads (no single fixed creative — see docs/07)
+SELECT page_name, card_count, collation_count, keyword_found
+FROM ads
+WHERE ad_format = 'catalog'
+ORDER BY card_count DESC;
 ```
 
 ---

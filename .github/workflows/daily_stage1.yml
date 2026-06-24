@@ -1,8 +1,8 @@
 # Stage 1 — Keyword count scraper
 #
-# Runs twice daily at 5AM and 5PM BRT (Brazil UTC-3):
-#   5AM  BRT = 08:00 UTC
-#   5PM  BRT = 20:00 UTC
+# Runs once daily at 5AM BRT (Brazil UTC-3) = 08:00 UTC.
+# (Used to run twice a day at 5AM/5PM BRT — dropped to once since the count
+# itself doesn't change enough intra-day to justify doubling FB throttle exposure.)
 #
 # IP rotation: each niche = separate matrix job = separate runner = different IP.
 # max-parallel: 1 + 5-min cooldown prevents FB soft throttle.
@@ -16,7 +16,6 @@ name: Stage 1 — Count Keywords
 on:
   schedule:
     - cron: '0 8 * * *'    # 5AM BRT
-    - cron: '0 20 * * *'   # 5PM BRT
   workflow_dispatch:
     inputs:
       niche:

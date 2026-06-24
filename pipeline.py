@@ -2,12 +2,11 @@
 """
 FB Ad Spy — Pipeline Orchestrator
 ===================================
-Runs the 4 agents in sequence for a given niche/country:
+Runs the 3 active agents in sequence for a given niche/country:
 
   Stage 1 — count_agent:    keyword × type counts → keyword_snapshots
   Stage 2 — metadata_agent: individual ad nodes  → ads table
-  Stage 3 — download_agent: media files          → data/media/
-  Stage 4 — analyze_agent:  Claude analysis      → ads analysis fields
+  Stage 3 — analyze_agent:  download media temp → Claude/Whisper → delete
 
 Each stage can be run standalone or skipped via flags.
 

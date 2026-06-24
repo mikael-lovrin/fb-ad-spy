@@ -26,6 +26,7 @@ Usage:
 
 import argparse
 import asyncio
+import json
 import logging
 import sys
 
@@ -33,7 +34,7 @@ from playwright.async_api import async_playwright
 
 from core.html_parser import extract_ads_from_html
 from core.keywords import get_keywords_for_nicho, get_available_nichos
-from core.playwright_scraper import build_search_url
+from core.playwright_scraper import build_page_url, build_search_url
 from storage.database import (
     init_db, bulk_upsert, get_latest_snapshots, update_snapshot_media_counts,
 )
@@ -167,6 +168,202 @@ async def _scrape_keyword_metadata(
     return total_count, all_ads[:count]
 
 
+def get_top_accounts_for_niche(niche: str, country: str = "US", top_n: int = 10) -> list[dict]:
+    """
+    Dedupe the top advertiser pages already captured by count_agent across all of a
+    niche's keyword snapshots, and return up to top_n unique accounts.
+
+    top_pages.ad_count is FB's capped display count (often 10 or 100 — not the real
+    total), so it only tells us an account is *among the leaders*, not an exact rank.
+    We keep each account's highest observed count and sort by that as a tiebreaker.
+    """
+    snapshots = get_latest_snapshots(niche, country)
+    seen: dict[str, dict] = {}
+
+    for snap in snapshots:
+        try:
+            pages = json.loads(snap.get("top_pages") or "[]")
+        except (TypeError, ValueError):
+            continue
+        for p in pages:
+            page_id = p.get("page_id")
+            if not page_id:
+                continue
+            if page_id not in seen or p.get("ad_count", 0) > seen[page_id].get("ad_count", 0):
+                seen[page_id] = p
+
+    ranked = sorted(seen.values(), key=lambda p: p.get("ad_count", 0), reverse=True)
+    return ranked[:top_n]
+
+
+async def _scrape_account_ads(
+    browser,
+    page_id: str,
+    page_name: str,
+    country: str,
+    count: int = 20,
+    scroll_pages: int = 6,
+) -> list[dict]:
+    """
+    Load one advertiser's full FB Ad Library page (view_all_page_id) and return
+    their top `count` ads, ranked by collation_count (how many near-identical
+    creatives they're running — the "ad strategy" signal) then days_running
+    (longevity = it's working).
+    """
+    context = await browser.new_context(
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        locale="en-US",
+        timezone_id="America/New_York",
+        viewport={"width": 1280, "height": 900},
+    )
+    page = await context.new_page()
+
+    try:
+        from playwright_stealth import stealth_async
+        await stealth_async(page)
+    except ImportError:
+        pass
+
+    all_ads: list[dict] = []
+    seen_ids: set[str] = set()
+    url = build_page_url(page_id, country)
+    keyword_tag = f"account:{page_name}"
+
+    try:
+        html = await _load_page_with_retry(page, url)
+        _, ads = extract_ads_from_html(html, keyword_tag)
+        for ad in ads:
+            aid = ad.get("ad_archive_id", "")
+            if aid and aid not in seen_ids:
+                seen_ids.add(aid)
+                all_ads.append(ad)
+
+        logger.info(f"  [{page_name}]: {len(all_ads)} ads loaded")
+
+        # Gather a bigger pool than `count` so the collation/longevity ranking
+        # below has something real to choose from, not just load order.
+        for scroll_n in range(scroll_pages):
+            if len(all_ads) >= count * 3:
+                break
+            prev = len(all_ads)
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await page.wait_for_timeout(3_000)
+
+            html = await page.content()
+            _, ads = extract_ads_from_html(html, keyword_tag)
+            for ad in ads:
+                aid = ad.get("ad_archive_id", "")
+                if aid and aid not in seen_ids:
+                    seen_ids.add(aid)
+                    all_ads.append(ad)
+
+            new = len(all_ads) - prev
+            logger.info(f"    Scroll {scroll_n + 1}: +{new} ads (total: {len(all_ads)})")
+            if new == 0:
+                break
+
+    except Exception as e:
+        logger.error(f"  Error scraping account '{page_name}' ({page_id}): {e}")
+    finally:
+        await page.close()
+        await context.close()
+
+    ranked = sorted(
+        all_ads,
+        key=lambda a: (a.get("collation_count") or 0, a.get("days_running") or 0),
+        reverse=True,
+    )
+    return ranked[:count]
+
+
+async def run_top_accounts_metadata_async(
+    niche: str,
+    country: str = "US",
+    top_accounts: int = 10,
+    ads_per_account: int = 20,
+    inter_account_delay: float = 10.0,
+) -> list[dict]:
+    """
+    Stage 2 alternative: instead of scrolling an unfiltered keyword search (which
+    walls out at 100 ads on saturated niches), spy directly on the niche's top N
+    advertiser accounts (deduped across keywords) and grab their longest-running,
+    most-duplicated creatives — the actual signal of a validated ad strategy.
+    """
+    # Pull a bigger candidate pool than needed — some "top" pages are noise
+    # (irrelevant accounts the loose keyword_unordered search swept up) and
+    # return 0 ads when queried directly. We skip those and keep going down
+    # the ranked list until we have `top_accounts` accounts that actually
+    # have ads, instead of stopping short.
+    candidates = get_top_accounts_for_niche(niche, country, top_accounts * 3)
+    if not candidates:
+        logger.error(
+            f"No top_pages data for niche '{niche}' — run count_agent first."
+        )
+        return []
+
+    logger.info(
+        f"[metadata_agent] top-accounts mode | niche={niche} "
+        f"| {len(candidates)} candidates, targeting {top_accounts} accounts "
+        f"| {ads_per_account} ads/account"
+    )
+    all_ads: list[dict] = []
+    accounts_used = 0
+    accounts_skipped = 0
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
+        )
+
+        for acc in candidates:
+            if accounts_used >= top_accounts:
+                break
+            if accounts_used > 0 or accounts_skipped > 0:
+                await asyncio.sleep(inter_account_delay)
+
+            ads = await _scrape_account_ads(
+                browser, acc["page_id"], acc.get("page_name", acc["page_id"]),
+                country, ads_per_account,
+            )
+
+            if not ads:
+                accounts_skipped += 1
+                logger.info(f"  [{acc.get('page_name')}] returned 0 ads — skipping")
+                continue
+
+            all_ads.extend(ads)
+            accounts_used += 1
+
+        await browser.close()
+
+    logger.info(
+        f"[metadata_agent] {accounts_used} accounts used, "
+        f"{accounts_skipped} skipped (0 ads)"
+    )
+
+    if all_ads:
+        stats = bulk_upsert(all_ads)
+        logger.info(f"[metadata_agent] Saved: {stats}")
+
+    return all_ads
+
+
+def run_top_accounts_metadata(
+    niche: str,
+    country: str = "US",
+    top_accounts: int = 10,
+    ads_per_account: int = 20,
+) -> list[dict]:
+    return asyncio.run(
+        run_top_accounts_metadata_async(niche, country, top_accounts, ads_per_account)
+    )
+
+
 async def run_metadata_agent_async(
     niche: str = None,
     keywords: list[str] = None,
@@ -261,22 +458,48 @@ if __name__ == "__main__":
         "--min-ads", type=int, default=0,
         help="Only process keywords with >= N ads in last Stage 1 snapshot",
     )
+    parser.add_argument(
+        "--top-accounts", type=int, default=0,
+        help="Top-accounts mode: spy on the N top advertiser accounts for --niche "
+             "(deduped, from count_agent's top_pages) instead of an unfiltered keyword scroll",
+    )
+    parser.add_argument(
+        "--ads-per-account", type=int, default=20,
+        help="Ads to keep per account in --top-accounts mode (default 20)",
+    )
     args = parser.parse_args()
 
     init_db()
 
-    keywords = [args.keyword] if args.keyword else None
-    ads = run_metadata_agent(
-        niche=args.niche,
-        keywords=keywords,
-        country=args.country,
-        count=args.count,
-        min_total_ads=args.min_ads,
-    )
+    if args.top_accounts:
+        if not args.niche:
+            print("--top-accounts requires --niche")
+            sys.exit(1)
+        ads = run_top_accounts_metadata(
+            niche=args.niche,
+            country=args.country,
+            top_accounts=args.top_accounts,
+            ads_per_account=args.ads_per_account,
+        )
+    else:
+        keywords = [args.keyword] if args.keyword else None
+        ads = run_metadata_agent(
+            niche=args.niche,
+            keywords=keywords,
+            country=args.country,
+            count=args.count,
+            min_total_ads=args.min_ads,
+        )
 
-    print(f"\nMetadata agent: {len(ads)} ads saved.")
+    def _safe_print(s: str) -> None:
+        try:
+            print(s)
+        except UnicodeEncodeError:
+            print(s.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(sys.stdout.encoding or "utf-8", errors="replace"))
+
+    _safe_print(f"\nMetadata agent: {len(ads)} ads saved.")
     for ad in ads[:5]:
-        print(f"\n  [{ad.get('ad_type', '?')}] {ad.get('page_name')}")
-        print(f"  Scale:    {ad.get('collation_count')} creatives")
-        print(f"  Days:     {ad.get('days_running')}")
-        print(f"  Copy:     {str(ad.get('ad_body', ''))[:100]}...")
+        _safe_print(f"\n  [{ad.get('ad_type', '?')}] {ad.get('page_name')}")
+        _safe_print(f"  Scale:    {ad.get('collation_count')} creatives")
+        _safe_print(f"  Days:     {ad.get('days_running')}")
+        _safe_print(f"  Copy:     {str(ad.get('ad_body', ''))[:100]}...")

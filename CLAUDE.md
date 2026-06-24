@@ -12,14 +12,21 @@ Automates the FB Ad Library competitive intelligence process described by Gustav
 Monitors active DR (Direct Response) ads across 10 niches, twice daily (6AM and 6PM BRT).
 Stores keyword counts, ad metadata, copy, transcriptions, and Claude analysis in Supabase.
 
-## 4-stage pipeline
+**New to "ad spying"?** Read `docs/07 - Spy Methodology (Gustavo's Process).md` first —
+it explains the manual technique (DR-signal words, mechanism words, duplication/domain
+signals, catalog vs. CBO ads, offer-validation thresholds) that this codebase automates.
+The original source material is in `docs/reference/`.
+
+## 3-stage pipeline
 
 | Stage | Agent | What it does |
 |-------|-------|-------------|
 | 1 | `agents/count_agent.py` | Counts active ads per keyword (total / video / image) → keyword_snapshots |
 | 2 | `agents/metadata_agent.py` | Extracts individual ad data from HTML → ads table |
-| 3 | `agents/download_agent.py` | Downloads video/image files to data/media/ |
-| 4 | `agents/analyze_agent.py` | Claude copy + Vision + Whisper analysis → ads table |
+| 3 | `agents/analyze_agent.py` | Downloads media to temp → Claude copy + Vision + Whisper → deletes media, keeps only analysis text |
+
+(Originally a 4-stage design with a separate download agent — merged into Stage 3 since media is
+temporary anyway. `agents/download_agent.py` no longer exists.)
 
 ## Key technical discoveries
 
@@ -37,6 +44,12 @@ Recovery: wait 30-90 min, use `--delay 30`.
 ### URL format (critical)
 Must use `keyword_unordered` + `sort_data[direction]=desc&sort_data[mode]=total_impressions`.
 Brackets in `sort_data[...]` must NOT be URL-encoded (FB rejects `%5B%5D`).
+
+### Catalog/DPA ads have no single fixed creative
+When `snapshot.cards[]` is non-empty, the ad is a Meta-assembled catalog/DPA carousel, not a
+fixed video/image. `html_parser.py` flags these as `ad_format = "catalog"` with `card_count`
+set; `analyze_agent.py` skips video/image download for them (nothing representative to
+transcribe) but still runs copy analysis. See `docs/07 - Spy Methodology (Gustavo's Process).md`.
 Builder: `core/playwright_scraper.py → build_search_url()`
 
 ## File structure

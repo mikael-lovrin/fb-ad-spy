@@ -18,7 +18,8 @@ Confirmed structure:
                           .snapshot.page_name
                           .snapshot.body.text   (ad copy)
                           .snapshot.cta_text
-                          .snapshot.cards[]     (media)
+                          .snapshot.cards[]     (media — non-empty means a
+                                                  catalog/DPA ad, see docs/07)
                           .snapshot.videos[]
                           .snapshot.images[]
 """
@@ -171,11 +172,19 @@ def parse_collated_result(item: dict, keyword: str) -> dict | None:
                 or ""
             )
 
-    for card in snapshot.get("cards") or []:
+    # cards[] = a catalog/DPA ad (Meta assembles the creative per-viewer from a
+    # product feed, so there is no single fixed creative — see docs/07). We
+    # still grab the first card's media as a representative thumbnail, but
+    # card_count/ad_format below let analyze_agent treat it differently.
+    cards = snapshot.get("cards") or []
+    for card in cards:
         if not video_url:
             video_url = card.get("video_hd_url") or card.get("video_sd_url") or ""
         if not image_url:
             image_url = card.get("original_image_url") or card.get("resized_image_url") or ""
+
+    card_count = len(cards)
+    ad_format = "catalog" if card_count > 0 else ("video" if video_url else ("image" if image_url else "text"))
 
     # Dates
     start_ts = item.get("start_date") or snapshot.get("start_date")
@@ -217,6 +226,8 @@ def parse_collated_result(item: dict, keyword: str) -> dict | None:
         "days_running":     days_running,
         "active_status":    "ACTIVE" if item.get("is_active") else "INACTIVE",
         "collation_count":  item.get("collation_count"),
+        "ad_format":        ad_format,
+        "card_count":       card_count,
         "impressions_min":  None,
         "impressions_max":  None,
         "spend_min":        None,
@@ -225,8 +236,10 @@ def parse_collated_result(item: dict, keyword: str) -> dict | None:
         "publisher_platforms": item.get("publisher_platforms") or [],
         "keyword_found":    keyword,
         "collected_at":     datetime.now().isoformat(),
-        "_image_url":       image_url,
-        "_video_url":       video_url,
+        # FB CDN URL, valid ~24-48h — persisted so analyze_agent (a later,
+        # separate process) can still fetch it before it expires.
+        "image_url":        image_url,
+        "video_url":        video_url,
         # Analysis fields (filled by analyze_agent)
         "ad_type":          "video" if video_url else ("image" if image_url else None),
         "industry":         None,
