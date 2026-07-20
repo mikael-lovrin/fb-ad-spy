@@ -1,48 +1,10 @@
-# Environment — NEVER commit these
-.env
-*.env
-
-# Local database and media
-data/
-logs/
-*.db
-*.db-shm
-*.db-wal
-
-# Python
 .venv/
 __pycache__/
 *.pyc
-*.pyo
-*.egg-info/
+.DS_Store
+*.env
+.env.local
+node_modules/
 dist/
 build/
-
-# Debug / temp / one-off scripts
-debug_*.py
-check_db.py
-check_supabase.py
-test_supabase.py
-show_snapshots.py
-test_playwright.py
-
-# Tutorial / reference files (not part of the codebase)
-*.pdf
-*.txt
-!requirements.txt
-
-# Old root-level duplicates (moved to core/, storage/, analysis/, dashboard/)
-/database.py
-/fb_api.py
-/image_analyzer.py
-/keywords.py
-/text_analyzer.py
-/video_analyzer.py
-/app.py
-
-# Log files
-*.log
-
-# OS
-.DS_Store
-Thumbs.db
+*.egg-info/
